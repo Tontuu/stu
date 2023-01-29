@@ -1,13 +1,14 @@
-use tabled::{Table, Tabled};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use std::env;
 use std::fs;
-use serde_json::{Result, Value};
-use serde::{Serialize, Deserialize};
+use std::process::ExitCode;
+use std::result::Result;
+use tabled::{style::Style, BorderText, Table, Tabled, Width};
 
 extern crate quick_csv;
 
-#[derive(Tabled)]
-#[tabled(rename_all = "CamelCase")]
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Tabled, Serialize, Deserialize, Debug)]
 struct Log {
     #[tabled(rename = "Subject")]
     subject: String,
@@ -29,8 +30,21 @@ struct Log {
 }
 
 impl Log {
-    fn calculate_percentage(&self) -> f32 {
-        (self.right_answers * 100) as f32 / self.total_questions as f32
+    fn new(
+        subject: &str,
+        topic: &str,
+        date: &str,
+        total_questions: usize,
+        right_answers: usize,
+    ) -> Self {
+        Self {
+            subject: subject.to_string(),
+            topic: topic.to_string(),
+            date: date.to_string(),
+            total_questions,
+            right_answers,
+            percentage: ((right_answers * 100) as f32 / total_questions as f32).to_string(),
+        }
     }
 }
 
@@ -41,48 +55,110 @@ struct Journal {
 }
 
 impl Journal {
-    fn new(exam: String , logs: Vec<Log>) -> Self {
-        // let mut percentage = (right_answers*100) as f32 / total_questions as f32;
+    fn new(exam: &str) -> Self {
         Self {
-            exam,
-            logs,
+            exam: exam.to_string(),
+            logs: Vec::new(),
         }
     }
+
+    fn add_log(&mut self, log: Log) {
+        self.logs.push(log);
+    }
+}
+fn usage(program: &str) {
+    eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
+    eprintln!("Subcommands:");
+    eprintln!("    show              print all user journals");
+    eprintln!("    add <journal>     interactively add log to journal");
+    eprintln!("    get <query>       search for <query> and print results");
+    eprintln!("       -> query can be: [journal, subject, topic, \"DD/MM/YYYY\"");
 }
 
-fn main() -> Result<()> {
-    let mut journals: Vec<Journal> = Vec::new();
-    
-    let json_str: &str = &fs::read_to_string("data.json").expect("ERROR: Could not read json file");
-    let objects: Value  = serde_json::from_str::<Value>(json_str)
+fn get_journals(filepath: &str, journals: &mut Vec<Journal>) -> Result<(), ()> {
+    let json_str: &str = &fs::read_to_string(filepath).expect("ERROR: Could not read json file");
+    let objects: Value = serde_json::from_str::<Value>(json_str)
         .expect("ERROR: Could not make json object from string");
 
     for journal_objs in objects["Journals"].as_array() {
         for journal_value in journal_objs {
-            let mut logs: Vec<Log> = Vec::new();
+            let exam = journal_value["Exam"].as_str().unwrap();
+            let mut journal: Journal = Journal::new(exam);
 
             for log_objs in journal_value["Logs"].as_array() {
                 for mut log_value in log_objs.clone() {
-                    let percentage = format!("{}%", (&log_value["right_answers"]
-                        .as_u64()
-                        .expect("ERROR: Could not extract number from value")
-                        * 100 /
-                        &log_value["total_questions"]
-                        .as_u64()
-                        .expect("ERROR: Could not extract number from value")).to_string());
+                    let percentage = format!(
+                        "{}%",
+                        (&log_value["right_answers"]
+                            .as_u64()
+                            .expect("ERROR: Could not extract number from value")
+                            * 100
+                            / &log_value["total_questions"]
+                                .as_u64()
+                                .expect("ERROR: Could not extract number from value"))
+                            .to_string()
+                    );
                     log_value["percentage"] = serde_json::to_value(&percentage).unwrap();
 
-                    let log: Log = serde_json::from_str(&log_value.to_string())?;
-                    logs.push(log);
+                    let log: Log = serde_json::from_str(&log_value.to_string()).map_err(|err| {
+                        eprintln!("ERROR: Could not deserialize json into log struct: {err}");
+                    })?;
+                    journal.add_log(log);
                 }
             }
-            let exam = journal_value["Exam"].as_str().unwrap().to_string();
-            journals.push(Journal::new(exam, logs));
+            journals.push(journal);
         }
     }
-    for journal in journals {
-        let table = Table::new(journal.logs).to_string();
-        println!("{table}")
-    }
+
     Ok(())
+}
+
+fn show(journals: &Vec<Journal>) {
+    for journal in journals {
+        let mut table = Table::new(&journal.logs);
+        table
+            .with(Style::rounded())
+            .with(BorderText::new(0, format!("{exam} ", exam = journal.exam)))
+            .with(Width::justify(20));
+
+        println!("{table}", table = table.to_string())
+    }
+}
+
+fn setup() -> Result<(), ()> {
+    let mut args = env::args();
+    let program = args.next().expect("path to program is provided");
+
+    let subcommand = args.next().ok_or_else(|| {
+        usage(&program);
+        eprintln!("ERROR: Subcommand is needed");
+    })?;
+
+    let mut journals: Vec<Journal> = Vec::new();
+    get_journals("data.json", &mut journals)?;
+
+    match subcommand.as_str() {
+        "show" => {
+            show(&journals);
+        }
+        "get" => {
+            unimplemented!();
+        }
+        "add" => {
+            unimplemented!();
+        }
+        _ => {
+            usage(&program);
+            eprintln!("ERROR: Unexpected subcommand: {subcommand}");
+            return Err(());
+        }
+    }
+
+    Ok(())
+}
+fn main() -> ExitCode {
+    match setup() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(()) => ExitCode::FAILURE,
+    }
 }
