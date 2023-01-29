@@ -6,8 +6,6 @@ use std::process::ExitCode;
 use std::result::Result;
 use tabled::{style::Style, BorderText, Table, Tabled, Width};
 
-extern crate quick_csv;
-
 #[derive(Tabled, Serialize, Deserialize, Debug)]
 struct Log {
     #[tabled(rename = "Subject")]
@@ -29,6 +27,8 @@ struct Log {
     percentage: String,
 }
 
+// TODO: Remove dead code
+#[allow(dead_code)]
 impl Log {
     fn new(
         subject: &str,
@@ -76,14 +76,24 @@ fn usage(program: &str) {
 }
 
 fn get_journals(filepath: &str, journals: &mut Vec<Journal>) -> Result<(), ()> {
-    let json_str: &str = &fs::read_to_string(filepath).expect("ERROR: Could not read json file");
-    let objects: Value = serde_json::from_str::<Value>(json_str)
-        .expect("ERROR: Could not make json object from string");
+    let json_str: &str = &fs::read_to_string(filepath).map_err(|error| {
+        eprintln!("ERROR: Could not read json filepath {error}")
+    })?;
+
+    let objects: Value = serde_json::from_str::<Value>(json_str).map_err(|error| {
+        eprintln!("ERROR: Could not create json object from string: {error}")
+    })?;
 
     for journal_objs in objects["Journals"].as_array() {
         for journal_value in journal_objs {
-            let exam = journal_value["Exam"].as_str().unwrap();
+            let exam = journal_value["Exam"].as_str().ok_or_else(|| {
+                eprintln!("ERROR: Value `Exam` not found in {filepath} at `{value}`", value = "Journals");
+            })?;
             let mut journal: Journal = Journal::new(exam);
+            if journal_value["Logs"].is_null() {
+                eprintln!("ERROR: Value `Logs` not found in {filepath} at `{value}` journal", value = journal_value["Exam"].as_str().unwrap());
+                return Err(());
+            }
 
             for log_objs in journal_value["Logs"].as_array() {
                 for mut log_value in log_objs.clone() {
@@ -125,6 +135,15 @@ fn show(journals: &Vec<Journal>) {
     }
 }
 
+fn make_log(log: Option<std::string::String>) -> () {
+    if log.is_none() {
+        todo!("Add log interactively");
+        println!("Is none");
+    }
+
+    todo!("Implement add log feature through file");
+}
+
 fn setup() -> Result<(), ()> {
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
@@ -145,6 +164,8 @@ fn setup() -> Result<(), ()> {
             unimplemented!();
         }
         "add" => {
+            let user_log = make_log(args.next());
+            // add(&journals);
             unimplemented!();
         }
         _ => {
@@ -156,9 +177,16 @@ fn setup() -> Result<(), ()> {
 
     Ok(())
 }
+
+// TODO: Remove unreachable
+#[allow(unreachable_code)]
 fn main() -> ExitCode {
     match setup() {
         Ok(()) => ExitCode::SUCCESS,
         Err(()) => ExitCode::FAILURE,
     }
 }
+
+// TODO: Implement query log
+// TODO: Implement add log to journal
+// TODO: Implement create journal
