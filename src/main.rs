@@ -2,9 +2,33 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
 use std::fs;
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 use std::result::Result;
 use tabled::{style::Style, BorderText, Table, Tabled, Width};
+use tempfile::Builder;
+use std::io::{Write, Read, Seek};
+
+
+static DEFAULT_NOTE_BUILDER_TEXT: &str =
+"STU Note Builder
+------------------
+
+Journal
+[type here inside]
+
+Subject
+[type here inside]
+
+Topic
+[type here inside]
+
+Total Questions 
+[type here inside]
+
+Right Answers
+[type here inside]";
+
+static DEFAULT_EDITOR: &str = "vim";
 
 #[derive(Tabled, Serialize, Deserialize, Debug)]
 struct Log {
@@ -70,18 +94,18 @@ fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
     eprintln!("    show              print all user journals");
-    eprintln!("    add <journal>     interactively add log to journal");
+    eprintln!("    add               interactively add log to journal");
     eprintln!("    get <query>       search for <query> and print results");
     eprintln!("       -> query can be: [journal, subject, topic, \"DD/MM/YYYY\"");
 }
 
 fn get_journals(filepath: &str, journals: &mut Vec<Journal>) -> Result<(), ()> {
-    let json_str: &str = &fs::read_to_string(filepath).map_err(|error| {
-        eprintln!("ERROR: Could not read json filepath {error}")
+    let json_str: &str = &fs::read_to_string(filepath).map_err(|err| {
+        eprintln!("ERROR: Could not read json filepath {err}")
     })?;
 
-    let objects: Value = serde_json::from_str::<Value>(json_str).map_err(|error| {
-        eprintln!("ERROR: Could not create json object from string: {error}")
+    let objects: Value = serde_json::from_str::<Value>(json_str).map_err(|err| {
+        eprintln!("ERROR: Could not create json object from string: {err}")
     })?;
 
     for journal_objs in objects["Journals"].as_array() {
@@ -135,14 +159,51 @@ fn show(journals: &Vec<Journal>) {
     }
 }
 
-fn make_log(log: Option<std::string::String>) -> () {
-    if log.is_none() {
-        todo!("Add log interactively");
-        println!("Is none");
-    }
+fn edit_text(filepath: String) -> Result<(), ()> {
+    // TODO: Give user the external option of choosing the EDITOR
+    let env_editor: String = env::var("EDITOR").unwrap_or_else(|_|  DEFAULT_EDITOR.to_string());
 
-    todo!("Implement add log feature through file");
+    let mut editor_process = Command::new(&env_editor)
+        .arg(filepath)
+        .spawn()
+        .expect(format!("ERROR: Could not start {} editor", env_editor).as_str());
+
+    let _exit_code = editor_process
+        .wait().map_err(|err| {
+            eprintln!("ERROR: {err}");
+        })?;
+
+    Ok(()) 
 }
+
+fn make_log() -> Result<(), ()> {
+    // TODO[3]: Parse tempfile to log struct
+    let mut tempfile = Builder::new()
+        .prefix("stu-log_")
+        .suffix(".md")
+        .rand_bytes(4)
+        .tempfile()
+        .map_err(|err| {
+            eprintln!("ERROR: Could not create tempfile: {err}");
+        })?;
+
+    write!(tempfile, "{}", &DEFAULT_NOTE_BUILDER_TEXT).unwrap();
+    tempfile.flush().unwrap();
+
+    edit_text(tempfile.path().display().to_string())?;
+
+    let mut buf = String::new();
+    tempfile.flush().unwrap();
+    tempfile.rewind().unwrap();
+    tempfile.read_to_string(&mut buf).unwrap();
+    println!("{buf}");
+
+    tempfile.close().map_err(|err| {eprintln!("ERROR: Could not delete temporary file: {err}");})?;
+
+    std::process::exit(69);
+    Ok(())
+}
+
 
 fn setup() -> Result<(), ()> {
     let mut args = env::args();
@@ -153,18 +214,22 @@ fn setup() -> Result<(), ()> {
         eprintln!("ERROR: Subcommand is needed");
     })?;
 
-    let mut journals: Vec<Journal> = Vec::new();
-    get_journals("data.json", &mut journals)?;
-
     match subcommand.as_str() {
         "show" => {
+            let mut journals: Vec<Journal> = Vec::new();
+            get_journals("data.json", &mut journals)?;
+
             show(&journals);
         }
         "get" => {
             unimplemented!();
         }
         "add" => {
-            let user_log = make_log(args.next());
+            let _user_log = make_log();
+
+            let mut journals: Vec<Journal> = Vec::new();
+            get_journals("../data.json", &mut journals)?;
+
             // add(&journals);
             unimplemented!();
         }
@@ -178,8 +243,6 @@ fn setup() -> Result<(), ()> {
     Ok(())
 }
 
-// TODO: Remove unreachable
-#[allow(unreachable_code)]
 fn main() -> ExitCode {
     match setup() {
         Ok(()) => ExitCode::SUCCESS,
