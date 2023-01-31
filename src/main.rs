@@ -12,21 +12,21 @@ use std::io::{Write, Read, Seek};
 static DEFAULT_NOTE_BUILDER_TEXT: &str =
 "STU Note Builder
 ------------------
-
-Journal
-[type here inside]
+**TYPE INSIDE BRACKETS**
+*Do not modify anything outside the brackets*
 
 Subject
-[type here inside]
+[type here]
 
 Topic
-[type here inside]
+[type here]
 
-Total Questions 
-[type here inside]
+Total Questions
+[type here]
 
 Right Answers
-[type here inside]";
+[type here]";
+
 
 static DEFAULT_EDITOR: &str = "vim";
 
@@ -70,6 +70,33 @@ impl Log {
             percentage: ((right_answers * 100) as f32 / total_questions as f32).to_string(),
         }
     }
+    fn default() -> Self {
+        Self {
+            subject: "unknown".to_string(),
+            topic: "unknown".to_string(),
+            date: "unknown".to_string(),
+            total_questions:  0,
+            right_answers:  0,
+            percentage:  "unknown".to_string(),
+        }
+    }
+
+    fn get_percentage(&mut self) {
+        self.percentage = ((self.right_answers*100) as f32
+                           /
+                           self.total_questions as f32).to_string();
+        self.percentage.push('%');
+    }
+
+    fn get_date(&mut self) {
+        let date_process = Command::new("/usr/bin/date")
+            .arg("+%m/%d/%Y %r")
+            .output()
+            .expect("ERROR: Could not run date process");
+        
+        let output = std::str::from_utf8(&date_process.stdout).unwrap_or_else(|_| "unknown").trim();
+        self.date = output.to_string();
+    }
 }
 
 #[derive(Debug)]
@@ -94,9 +121,9 @@ fn usage(program: &str) {
     eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
     eprintln!("Subcommands:");
     eprintln!("    show              print all user journals");
-    eprintln!("    add               interactively add log to journal");
+    eprintln!("    add <journal>     interactively record log into journal");
     eprintln!("    get <query>       search for <query> and print results");
-    eprintln!("       -> query can be: [journal, subject, topic, \"DD/MM/YYYY\"");
+    eprintln!("       -> query can be: [journal, subject, topic, \"MM/DD/YYYY\"");
 }
 
 fn get_journals(filepath: &str, journals: &mut Vec<Journal>) -> Result<(), ()> {
@@ -176,9 +203,40 @@ fn edit_text(filepath: String) -> Result<(), ()> {
     Ok(()) 
 }
 
-fn make_log() -> Result<(), ()> {
-    // TODO[3]: Parse tempfile to log struct
-    let mut tempfile = Builder::new()
+fn remove_brackets(string: &str) -> String {
+    string.chars().filter(|c| c != &'[' && c != &']').collect::<String>()
+}
+
+fn log_from_tf(buf: String) -> Result<Log, ()> {
+    let mut lines = buf.lines().enumerate().peekable();
+    let mut log: Log = Log::default();
+
+    while let Some(current) = lines.next() {
+        if let Some(&next) = lines.peek() {
+            let next_line = next.1;
+            let line_number = next.0 + 1;
+
+            match current.1.trim() {
+                "Subject" => log.subject = remove_brackets(next_line),
+                "Topic" => log.topic = remove_brackets(next_line),
+                "Total Questions" => log.total_questions = remove_brackets(next_line).parse().map_err(|err| {
+                    eprintln!("ERROR: Failed to read log file: {err} {next_line} at line {}", line_number)
+                })?,
+                "Right Answers" => log.right_answers = remove_brackets(next_line).parse().map_err(|err| {
+                    eprintln!("ERROR: Failed to read log file: {err} {next_line} at line {}", line_number)
+                })?,
+                _ => ()
+            }
+        }
+    }
+    log.get_percentage();
+    log.get_date();
+
+    Ok(log)
+}
+
+fn make_log() -> Result<Log, ()> {
+    let mut tf = Builder::new()
         .prefix("stu-log_")
         .suffix(".md")
         .rand_bytes(4)
@@ -187,21 +245,25 @@ fn make_log() -> Result<(), ()> {
             eprintln!("ERROR: Could not create tempfile: {err}");
         })?;
 
-    write!(tempfile, "{}", &DEFAULT_NOTE_BUILDER_TEXT).unwrap();
-    tempfile.flush().unwrap();
+    write!(tf, "{}", &DEFAULT_NOTE_BUILDER_TEXT).unwrap();
+    tf.flush().unwrap();
 
-    edit_text(tempfile.path().display().to_string())?;
+    edit_text(tf.path().display().to_string())?;
+
+    tf.flush().unwrap();
+    tf.rewind().unwrap();
+
+    tf.flush().unwrap();
+    tf.rewind().unwrap();
 
     let mut buf = String::new();
-    tempfile.flush().unwrap();
-    tempfile.rewind().unwrap();
-    tempfile.read_to_string(&mut buf).unwrap();
-    println!("{buf}");
+    tf.read_to_string(&mut buf).unwrap();
 
-    tempfile.close().map_err(|err| {eprintln!("ERROR: Could not delete temporary file: {err}");})?;
+    let log: Log = log_from_tf(buf)?;
 
-    std::process::exit(69);
-    Ok(())
+    tf.close().map_err(|err| {eprintln!("ERROR: Could not delete temporary file: {err}");})?;
+
+    Ok(log)
 }
 
 
@@ -225,7 +287,12 @@ fn setup() -> Result<(), ()> {
             unimplemented!();
         }
         "add" => {
-            let _user_log = make_log();
+            let journal_name = args.next().ok_or_else(|| {
+                eprintln!("ERROR: Journal name was not provided");
+            })?;
+            // let user_log = make_log()?;
+
+            unimplemented!();
 
             let mut journals: Vec<Journal> = Vec::new();
             get_journals("../data.json", &mut journals)?;
