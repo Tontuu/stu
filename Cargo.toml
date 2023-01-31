@@ -9,5 +9,5 @@ edition = "2021"
 tabled = "0.10.0"
 serde_json = "1.0"
 serde = {version = "1.0.152", features = ["derive"]}
-sqlite = "0.30.3"
 tempfile = "3.3.0"
+colored = "2.0.0"
