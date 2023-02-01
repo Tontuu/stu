@@ -4,10 +4,11 @@ use serde_json::Value;
 use std::env;
 use std::fs;
 use std::io::{Read, Seek, Write};
+use std::fs::File;
 use std::process::{Command, ExitCode};
 use std::result::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tabled::{style::Style, BorderText, Table, Tabled, Width};
+use tabled::{style::Style, BorderText, Table, Tabled, Width, Modify, object::Rows};
 use tempfile::Builder;
 
 static DEFAULT_EDITOR: &str = "vim";
@@ -23,7 +24,10 @@ struct Log {
     #[tabled(rename = "Date")]
     date: String,
 
-    #[tabled(rename = "Total answers")]
+    #[tabled(rename = "UID")]
+    uid: String,
+
+    #[tabled(rename = "Questions")]
     total_questions: usize,
 
     #[tabled(rename = "Right answers")]
@@ -31,35 +35,10 @@ struct Log {
 
     #[tabled(rename = "Percentage")]
     percentage: String,
-
-    uid: String,
 }
 
 impl Log {
-    fn new(
-        subject: &str,
-        topic: &str,
-        date: &str,
-        total_questions: usize,
-        right_answers: usize,
-    ) -> Self {
-        let random_uid: String = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .subsec_nanos()
-            .to_string();
-
-        Self {
-            subject: subject.to_string(),
-            topic: topic.to_string(),
-            date: date.to_string(),
-            uid: random_uid,
-            total_questions,
-            right_answers,
-            percentage: ((right_answers * 100) as f32 / total_questions as f32).to_string(),
-        }
-    }
-    fn default() -> Self {
+    fn new() -> Self {
         let random_uid: String = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -76,12 +55,6 @@ impl Log {
         }
     }
 
-    fn get_percentage(&mut self) {
-        self.percentage =
-            ((self.right_answers * 100) as f32 / self.total_questions as f32).to_string();
-        self.percentage.push('%');
-    }
-
     fn get_date(&mut self) {
         let date_process = Command::new("/usr/bin/date")
             .arg("+%m/%d/%Y %r")
@@ -95,10 +68,16 @@ impl Log {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct Journal {
     name: String,
     logs: Vec<Log>,
+}
+
+fn get_percentage(amount: f32, total: f32) -> String {
+    let result = (amount * 100.0) / total;
+    let rounded = result.round();
+    return format!("{}%", rounded);
 }
 
 impl Journal {
@@ -113,17 +92,30 @@ impl Journal {
         self.logs.push(log);
     }
 }
+
+#[derive(Tabled)]
+struct Metrics {
+    #[tabled(rename = "Right answers")]
+    right_answers: usize,
+
+    #[tabled(rename = "Percentage")]
+    percentage: String,
+
+    #[tabled(rename = "Total questions")]
+    total_questions: usize,
+}
+
 fn usage(program: &str) {
     eprintln!(
         "{usage}: {program} [SUBCOMMAND] [OPTIONS]\n",
         usage = "Usage".red()
     );
     eprintln!("{subcommands}:", subcommands = "Subcommands".red());
-    eprintln!("    show                   print all user journals");
+    eprintln!("    show    <-m>           print all user journals, use -m if you wanna print the metrics");
     eprintln!("    add     <journal>      add record log into journal");
     eprintln!("    add -j  <value>        add new journal with the given <value> name");
     eprintln!("    get      <query>       search for <query> and print results");
-    eprintln!("                ╰------>   query can be: [journal, subject, topic, \"MM/DD/YYYY\"");
+    eprintln!("                ╰------>   query can be: [uid, journal, subject, topic, \"MM/DD/YYYY\"");
     eprintln!()
 }
 
@@ -138,9 +130,9 @@ fn get_journals(filepath: &str, journals: &mut Vec<Journal>) -> Result<(), ()> {
         )
     })?;
 
-    for journal_objs in objects["Journals"].as_array() {
+    for journal_objs in objects.as_array() {
         for journal_value in journal_objs {
-            let name = journal_value["Name"].as_str().ok_or_else(|| {
+            let name = journal_value["name"].as_str().ok_or_else(|| {
                 eprintln!(
                     "{}: Value `Name` not found in {filepath} at `{value}`",
                     "ERROR".red(),
@@ -148,27 +140,20 @@ fn get_journals(filepath: &str, journals: &mut Vec<Journal>) -> Result<(), ()> {
                 );
             })?;
             let mut journal: Journal = Journal::new(name);
-            if journal_value["Logs"].is_null() {
+            if journal_value["logs"].is_null() {
                 eprintln!(
-                    "{}: Value `Logs` not found in {filepath} at `{value}` journal",
+                    "{}: Value `logs` not found in {filepath} at `{value}` journal",
                     "ERROR".red(),
-                    value = journal_value["Name"].as_str().unwrap()
+                    value = journal_value["name"].as_str().unwrap()
                 );
                 return Err(());
             }
 
-            for log_objs in journal_value["Logs"].as_array() {
+            for log_objs in journal_value["logs"].as_array() {
                 for mut log_value in log_objs.clone() {
-                    let percentage = format!(
-                        "{}%",
-                        (&log_value["right_answers"]
-                            .as_u64()
-                            .expect("ERROR: Could not extract number from value")
-                            * 100
-                            / &log_value["total_questions"]
-                                .as_u64()
-                                .expect("ERROR: Could not extract number from value"))
-                            .to_string()
+                    let percentage = get_percentage(
+                        *&log_value["right_answers"].as_u64().unwrap_or(0) as f32,
+                        *&log_value["total_questions"].as_u64().unwrap_or(0) as f32
                     );
                     log_value["percentage"] = serde_json::to_value(&percentage).unwrap();
 
@@ -189,15 +174,46 @@ fn get_journals(filepath: &str, journals: &mut Vec<Journal>) -> Result<(), ()> {
     Ok(())
 }
 
-fn show(journals: &Vec<Journal>) {
+fn show(journals: &Vec<Journal>, metrics: bool) {
     for journal in journals {
-        let mut table = Table::new(&journal.logs);
-        table
-            .with(Style::rounded())
-            .with(BorderText::new(0, format!("{name} ", name = journal.name)))
-            .with(Width::justify(20));
 
-        println!("{table}", table = table.to_string())
+        if !metrics {
+            let mut table = Table::new(&journal.logs);
+            table
+                .with(Style::rounded())
+                .with(BorderText::new(0, format!("{name} ", name = journal.name)))
+                .with(Modify::new(Rows::new(1..)).with(Width::truncate(15).suffix("...")))
+                .with(Width::justify(15));
+
+            println!("{table}", table = table.to_string());
+        } else {
+            let mut sum_questions = 0;
+            let mut sum_answers = 0;
+
+            for log in journal.logs.iter() {
+                sum_questions += log.total_questions;
+                sum_answers += log.right_answers;
+            }
+            let sum_percentage: &str = &get_percentage(sum_answers as f32, sum_questions as f32);
+            let sum_questions: &str = &sum_questions.to_string();
+            let sum_answers: &str = &sum_answers.to_string();
+
+            let mut builder = tabled::builder::Builder::default();
+            builder.set_columns(["", "Total"]);
+            builder.add_record(["Questions", sum_questions]);
+            builder.add_record(["Answers", sum_answers]);
+            builder.add_record(["Percentage", sum_percentage]);
+            let mut builder = builder.index();
+            builder.hide_index();
+
+            let mut metrics_table = builder.build();
+            metrics_table
+                .with(Width::list([10, 7]))
+                .with(Style::rounded())
+                .with(BorderText::new(0, format!("{}", journal.name)));
+
+            println!("{metrics}", metrics = metrics_table.to_string());
+        }
     }
 }
 
@@ -226,7 +242,7 @@ fn remove_brackets(string: &str) -> String {
 
 fn log_from_tf(buf: String) -> Result<Log, ()> {
     let mut lines = buf.lines().enumerate().peekable();
-    let mut log: Log = Log::default();
+    let mut log: Log = Log::new();
 
     while let Some(current) = lines.next() {
         if let Some(&next) = lines.peek() {
@@ -270,7 +286,7 @@ fn log_from_tf(buf: String) -> Result<Log, ()> {
         }
     }
 
-    log.get_percentage();
+    log.percentage = get_percentage(log.right_answers as f32, log.total_questions as f32);
     log.get_date();
 
     Ok(log)
@@ -351,7 +367,22 @@ fn list_journals(journals: &Vec<Journal>) {
     println!();
 }
 
+fn update_json(journals: String, filepath: &str) -> Result<(), ()>{
+    let mut file = File::create(filepath).map_err(|err| {
+        eprintln!("{}: Could not create file: {err}", "ERROR".red());
+    })?;
+
+    write!(file, "{}", journals).unwrap();
+    
+    file.sync_all().map_err(|err| {
+        eprintln!("{}: Could not sync OS data: {err}", "ERROR".red());
+    })?;
+
+    Ok(())
+}
+
 fn setup() -> Result<(), ()> {
+    let filepath = "nao.json";
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
 
@@ -362,8 +393,20 @@ fn setup() -> Result<(), ()> {
 
     match subcommand.as_str() {
         "show" => {
+            let mut metrics = false;
+            match args.next().as_deref() {
+                Some("-m") => {
+                    metrics = true;
+                }
+                Some(_) => {
+                    eprintln!("{}: Unknown argument", "ERROR".red());
+                    return Err(());
+                }
+                None => ()
+            }
+
             let mut journals: Vec<Journal> = Vec::new();
-            get_journals("../data.json", &mut journals)?;
+            get_journals(filepath, &mut journals)?;
 
             if journals.len() == 0 {
                 usage(&program);
@@ -375,7 +418,7 @@ fn setup() -> Result<(), ()> {
                 return Err(());
             }
 
-            show(&journals);
+            show(&journals, metrics);
         }
         "get" => {
             unimplemented!();
@@ -391,7 +434,7 @@ fn setup() -> Result<(), ()> {
                 }
                 Some(user_journal_query) => {
                     let mut journals: Vec<Journal> = Vec::new();
-                    get_journals("../data.json", &mut journals)?;
+                    get_journals(filepath, &mut journals)?;
                     let result = journals
                         .iter()
                         .filter(|x| x.name == user_journal_query)
@@ -412,15 +455,16 @@ fn setup() -> Result<(), ()> {
 
                         Some(_) => {
                             let new_log = make_log(user_journal_query)?;
-                            // journal.push(new_log);
                             for journal in journals.iter_mut() {
                                 if journal.name == user_journal_query {
                                     journal.add_log(new_log.clone());
                                 }
                             }
-                            // TODO[1]: Update json file 
-                            println!("Name {:#?}", user_journal_query);
-                            println!("{:#?}", journals)
+                            let json_content = serde_json::to_string(&journals).map_err(|err| {
+                                eprintln!("{}: Could not parse journal struct into json file: {err}", "ERROR".red())
+                            })?;
+
+                            update_json(json_content, "foo.json")?;
                         }
                     }
                 }
@@ -448,5 +492,4 @@ fn main() -> ExitCode {
 }
 
 // TODO: Implement query log
-// TODO: Implement add log to journal
 // TODO: Implement create journal
