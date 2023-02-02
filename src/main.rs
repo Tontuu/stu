@@ -98,18 +98,27 @@ impl Journal {
 }
 
 fn usage(program: &str) {
-    eprintln!(
-        "{usage}: {program} [SUBCOMMAND] [OPTIONS]\n",
+    println!(
+        "{usage}: {program} <subcommand> <options>\n",
         usage = "Usage".red()
     );
-    eprintln!("{subcommands}:", subcommands = "Subcommands".red());
-    eprintln!("    -h      --help         print help");
-    eprintln!("    show    <-m>           print all user journals, use -m if you wanna print the metrics");
-    eprintln!("    add     <journal>      add record log into journal");
-    eprintln!("    add -j  <value>        add new journal with the given <value> name");
-    eprintln!("    get      <query>       search for <query> and print results");
-    eprintln!("                ╰------>   query can be: [uid, journal, subject, topic, \"MM/DD/YYYY\"");
-    eprintln!()
+    println!("{subcommands}:", subcommands = "Subcommands".red());
+    println!("    -h      --help                    print help");
+    println!();
+    println!("    show   <subcommand>               print all user journals, use -m if you wanna print the metrics");
+    println!("                ╰------------------------> print metrics: \"-m\"");
+    println!();
+    println!("    remove <subcommand> <value>       remove a log with the given <value>");
+    println!("                │          ╰-------------> value can be: [UID, journal]");
+    println!("                ╰------------------------> remove journal: \"-j\"");
+    println!();
+    println!("    add    <subcommand> <value>       add either a new log or journal");
+    println!("                ╰------------------------> add journal: \"-j\"");
+    println!();
+    println!("    get    <subcommand> <query>       search for <query> and print results");
+    println!("                │          ╰-------------> query can be: [UID, journal, subject, topic, \"MM/DD/YYYY\"]");
+    println!("                ╰------------------------> sort query: \"-s\"");
+    println!()
 }
 
 fn get_journals(filepath: &str, journals: &mut Vec<Journal>) -> Result<(), ()> {
@@ -598,9 +607,78 @@ fn setup() -> Result<(), ()> {
                             return Ok(());
                         }
                     }
-                }
+                },
                 None => {
                     eprintln!("{}: Journal name to query was not provided", "ERROR".red());
+                    return Err(());
+                }
+            }
+        }
+        "remove" => {
+            match args.next().as_deref() {
+                Some("-j") => {
+                    let input_journal_name = args.next();
+
+                    if input_journal_name.is_none() {
+                        usage(&program);
+                        eprintln!("{}: Journal name was not provided", "ERROR".red());
+                        return Err(());
+                    }
+                    let input_journal_name = input_journal_name.unwrap();
+                    let mut journals: Vec<Journal> = Vec::new();
+                    get_journals(filepath, &mut journals)?;
+
+                    let mut found = false;
+                    for (i, journal) in journals.iter().enumerate() {
+                        if journal.name == input_journal_name {
+                            journals.remove(i);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if !found {
+                        eprintln!("{}", format!("Journal with <{input_journal_name}> name not found").red());
+                        return Err(());
+                    }
+
+                    let json_content = serde_json::to_string(&journals).map_err(|err| {
+                        eprintln!("{}: Could not parse journal struct into json file: {err}", "ERROR".red())
+                    })?;
+
+                    update_json(json_content, filepath)?;
+                    println!("{}", format!("Sucessfully removed {input_journal_name} journal").green());
+                    return Ok(());
+                },
+
+                Some(input_uid) => {
+                    let mut journals: Vec<Journal> = Vec::new();
+                    get_journals(filepath, &mut journals)?;
+                    let mut found = false;
+
+                    for journal in journals.iter_mut() {
+                        let logs = &mut journal.logs;
+                        for (i, log) in logs.iter_mut().enumerate() {
+                            if log.uid == input_uid {
+                                logs.remove(i);
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !found {
+                        eprintln!("{}", format!("Log with <{input_uid}> name not found").red());
+                        return Err(());
+                    }
+
+                    let json_content = serde_json::to_string_pretty(&journals).map_err(|err| {
+                        eprintln!("{}: Could not parse journal struct into json file: {err}", "ERROR".red())
+                    })?;
+
+                    println!("{json_content}");
+                    return Ok(());
+                },
+                None => {
+                    eprintln!("{}: log name was not provided", "ERROR".red());
                     return Err(());
                 }
             }
