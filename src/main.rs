@@ -8,7 +8,7 @@ use std::fs::File;
 use std::process::{Command, ExitCode};
 use std::result::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tabled::{style::Style, BorderText, Table, Tabled, Width, Modify, object::Rows};
+use tabled::{style::Style, BorderText, Table, Tabled, Width, Modify, object::Rows, Disable, locator::ByColumnName};
 use tempfile::Builder;
 
 static DEFAULT_EDITOR: &str = "vim";
@@ -55,23 +55,25 @@ impl Log {
         }
     }
 
-    fn get_date(&mut self) {
-        let date_process = Command::new("/usr/bin/date")
-            .arg("+%m/%d/%Y %r")
-            .output()
-            .expect("ERROR: Could not run date process");
-
-        let output = std::str::from_utf8(&date_process.stdout)
-            .unwrap_or_else(|_| "unknown")
-            .trim();
-        self.date = output.to_string();
-    }
 }
 
 #[derive(Debug, Serialize)]
 struct Journal {
     name: String,
     logs: Vec<Log>,
+}
+
+
+fn get_date() -> String {
+    let date_process = Command::new("/usr/bin/date")
+        .arg("+%m/%d/%Y")
+        .output()
+        .expect("ERROR: Could not run date process");
+
+    let output = std::str::from_utf8(&date_process.stdout)
+        .unwrap_or_else(|_| "unknown")
+        .trim();
+    return output.to_string();
 }
 
 fn get_percentage(amount: f32, total: f32) -> String {
@@ -93,24 +95,13 @@ impl Journal {
     }
 }
 
-#[derive(Tabled)]
-struct Metrics {
-    #[tabled(rename = "Right answers")]
-    right_answers: usize,
-
-    #[tabled(rename = "Percentage")]
-    percentage: String,
-
-    #[tabled(rename = "Total questions")]
-    total_questions: usize,
-}
-
 fn usage(program: &str) {
     eprintln!(
         "{usage}: {program} [SUBCOMMAND] [OPTIONS]\n",
         usage = "Usage".red()
     );
     eprintln!("{subcommands}:", subcommands = "Subcommands".red());
+    eprintln!("    -h      --help         print help");
     eprintln!("    show    <-m>           print all user journals, use -m if you wanna print the metrics");
     eprintln!("    add     <journal>      add record log into journal");
     eprintln!("    add -j  <value>        add new journal with the given <value> name");
@@ -174,47 +165,58 @@ fn get_journals(filepath: &str, journals: &mut Vec<Journal>) -> Result<(), ()> {
     Ok(())
 }
 
-fn show(journals: &Vec<Journal>, metrics: bool) {
+fn show_metrics(journals: &Vec<Journal>) {
     for journal in journals {
+        let mut sum_questions = 0;
+        let mut sum_answers = 0;
 
-        if !metrics {
-            let mut table = Table::new(&journal.logs);
-            table
-                .with(Style::rounded())
-                .with(BorderText::new(0, format!("{name} ", name = journal.name)))
-                .with(Modify::new(Rows::new(1..)).with(Width::truncate(15).suffix("...")))
-                .with(Width::justify(15));
-
-            println!("{table}", table = table.to_string());
-        } else {
-            let mut sum_questions = 0;
-            let mut sum_answers = 0;
-
-            for log in journal.logs.iter() {
-                sum_questions += log.total_questions;
-                sum_answers += log.right_answers;
-            }
-            let sum_percentage: &str = &get_percentage(sum_answers as f32, sum_questions as f32);
-            let sum_questions: &str = &sum_questions.to_string();
-            let sum_answers: &str = &sum_answers.to_string();
-
-            let mut builder = tabled::builder::Builder::default();
-            builder.set_columns(["", "Total"]);
-            builder.add_record(["Questions", sum_questions]);
-            builder.add_record(["Answers", sum_answers]);
-            builder.add_record(["Percentage", sum_percentage]);
-            let mut builder = builder.index();
-            builder.hide_index();
-
-            let mut metrics_table = builder.build();
-            metrics_table
-                .with(Width::list([10, 7]))
-                .with(Style::rounded())
-                .with(BorderText::new(0, format!("{}", journal.name)));
-
-            println!("{metrics}", metrics = metrics_table.to_string());
+        for log in journal.logs.iter() {
+            sum_questions += log.total_questions;
+            sum_answers += log.right_answers;
         }
+        let sum_percentage: &str = &get_percentage(sum_answers as f32, sum_questions as f32);
+        let sum_questions: &str = &sum_questions.to_string();
+        let sum_answers: &str = &sum_answers.to_string();
+
+        let mut builder = tabled::builder::Builder::default();
+        builder.set_columns(["", "Total"]);
+        builder.add_record(["Questions", sum_questions]);
+        builder.add_record(["Answers", sum_answers]);
+        builder.add_record(["Percentage", sum_percentage]);
+        let mut builder = builder.index();
+        builder.hide_index();
+
+        let mut metrics_table = builder.build();
+        metrics_table
+            .with(Width::list([10, 7]))
+            .with(Style::rounded())
+            .with(BorderText::new(0, format!("{}", journal.name)));
+
+        println!("{metrics}", metrics = metrics_table.to_string());
     }
+}
+
+fn show_journals(journals: &Vec<Journal>) {
+    for journal in journals {
+        let mut table = Table::new(&journal.logs);
+        table
+            .with(Style::rounded())
+            .with(BorderText::new(0, format!("{name} ", name = journal.name)))
+            .with(Modify::new(Rows::new(1..)).with(Width::truncate(15).suffix("...")))
+            .with(Width::justify(15));
+
+        println!("{table}", table = table.to_string());
+    }
+}
+
+fn show_log(log: &Log) {
+    let table = Table::new(vec![log])
+        .with(Disable::column(ByColumnName::new("Subject")))
+        .with(Style::rounded())
+        .with(BorderText::new(0, format!("{}", log.subject)))
+        .to_string();
+
+    println!("{table}");
 }
 
 fn edit_text(filepath: String) -> Result<(), ()> {
@@ -287,7 +289,6 @@ fn log_from_tf(buf: String) -> Result<Log, ()> {
     }
 
     log.percentage = get_percentage(log.right_answers as f32, log.total_questions as f32);
-    log.get_date();
 
     Ok(log)
 }
@@ -302,10 +303,12 @@ fn make_log(name: &str) -> Result<Log, ()> {
             eprintln!("{}: Could not create tempfile: {err}", "ERROR".red());
         })?;
 
+    let date = get_date();
     let note_builder_text: &str = &format!(
         "\
            STU Note Builder\n\
-           Journal: {name}\n\n\
+           Journal: {name}\n\
+           Date: {date}\n\n\
 \
             ------------------\n\n\
            **TYPE INSIDE BRACKETS**\n\
@@ -340,7 +343,8 @@ fn make_log(name: &str) -> Result<Log, ()> {
     let mut buf = String::new();
     tf.read_to_string(&mut buf).unwrap();
 
-    let log: Log = log_from_tf(buf)?;
+    let mut log: Log = log_from_tf(buf)?;
+    log.date = date;
 
     tf.close().map_err(|err| {
         eprintln!("{}: Could not delete temporary file: {err}", "ERROR".red());
@@ -381,8 +385,78 @@ fn update_json(journals: String, filepath: &str) -> Result<(), ()>{
     Ok(())
 }
 
+fn is_string_numeric(str: &str) -> bool {
+    for c in str.chars() {
+        if !c.is_numeric() {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+fn is_string_alphanumeric(str: &str) -> bool {
+    for c in str.chars() {
+        if c != '/' && !c.is_alphanumeric() && !c.is_whitespace() {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn query_for(str: &str, filepath: &str) -> Result<(), ()> {
+    let mut journals: Vec<Journal> = Vec::new();
+    get_journals(filepath, &mut journals)?;
+
+    let mut query_journal: Journal = Journal::new("Query");
+    for journal in journals {
+        if journal.name == str {
+            show_journals(&vec![journal]);
+            return Ok(());
+        }
+        for log in journal.logs.into_iter() {
+            if str == log.subject || str == log.topic || str == log.date {
+                query_journal.add_log(log);
+            }
+        }
+    }
+    if query_journal.logs.len() > 0 {
+        show_journals(&vec![query_journal]);
+        return Ok(());
+    }
+
+    eprintln!("{}", format!("unsuccessfully <{str}> query").red());
+    Err(())
+}
+
+fn query_uid(uid: &str, filepath: &str) -> Result<(), ()> {
+    if uid.len() != 9 {
+        eprintln!("{}: <{uid}> is an invalid UID", "ERROR".red());
+        return Err(());
+    }
+
+    let mut journals: Vec<Journal> = Vec::new();
+    get_journals(filepath, &mut journals)?;
+
+    let mut log: Option<Log> = None;
+    for journal in journals.iter() {
+        log = journal.logs.iter().cloned().filter(|x| x.uid == uid).next();
+        if log.is_some() {
+            break;
+        }
+    }
+
+    if log.is_none() {
+        eprintln!("{}", format!("log with <{uid}> UID not found").red());
+        return Err(());
+    }
+
+    show_log(&log.unwrap());
+    return Ok(());
+}
+
 fn setup() -> Result<(), ()> {
-    let filepath = "nao.json";
+    let filepath: &str = "foo.json";
     let mut args = env::args();
     let program = args.next().expect("path to program is provided");
 
@@ -392,45 +466,66 @@ fn setup() -> Result<(), ()> {
     })?;
 
     match subcommand.as_str() {
+        "-h" | "--help" => {
+            usage(&program);
+            return Ok(());
+        }
         "show" => {
-            let mut metrics = false;
-            match args.next().as_deref() {
-                Some("-m") => {
-                    metrics = true;
-                }
-                Some(_) => {
-                    eprintln!("{}: Unknown argument", "ERROR".red());
-                    return Err(());
-                }
-                None => ()
-            }
-
             let mut journals: Vec<Journal> = Vec::new();
             get_journals(filepath, &mut journals)?;
 
             if journals.len() == 0 {
                 usage(&program);
-                eprintln!(
-                    "{text}",
-                    text = "There's no journals at the moment, create one with\
-                           the command `stu -j add <name>`".red()
-                );
+                eprintln!("{}", format!("There's no journals at the moment, create one with\
+                            the command `stu -j add <name>`").red());
+
                 return Err(());
             }
 
-            show(&journals, metrics);
+            match args.next().as_deref() {
+                Some("-m") => { show_metrics(&journals);                          return Ok(()); }
+                None       => { show_journals(&journals);                         return Ok(()); }
+                Some(_)    => { eprintln!("{}: Unknown argument", "ERROR".red()); return Err(());}
+            }
+
+
         }
         "get" => {
-            unimplemented!();
+            match args.next().as_deref() {
+                Some(str) => {
+                    if is_string_numeric(str) {
+                        return query_uid(str, filepath);
+                    }
+
+                    if is_string_alphanumeric(str) {
+                        return query_for(str, filepath);
+                    }
+
+                    eprintln!("ERROR: Unknown query type");
+                    return Err(());
+                }
+                None => {
+                    usage(&program);
+                    eprintln!("{}: <query> was not provided", "ERROR".red());
+                    return Err(());
+                }
+            }
         }
         "add" => {
             match args.next().as_deref() {
                 Some("-j") => {
-                    if args.next().is_none() {
+                    let journal_name = args.next();
+
+                    if journal_name.is_none() {
+                        usage(&program);
                         eprintln!("{}: New journal name was not provided", "ERROR".red());
                         return Err(());
                     }
-                    println!("Adding new journal");
+
+                    let mut journals: Vec<Journal> = Vec::new();
+                    get_journals(filepath, &mut journals)?;
+                    
+                    println!("{journals:?}");
                 }
                 Some(user_journal_query) => {
                     let mut journals: Vec<Journal> = Vec::new();
@@ -491,5 +586,6 @@ fn main() -> ExitCode {
     }
 }
 
-// TODO: Implement query log
+// TODO:  
+// TODO: Implement sort by date and percentage
 // TODO: Implement create journal
