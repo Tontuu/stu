@@ -8,7 +8,8 @@ use std::fs::File;
 use std::process::{Command, ExitCode};
 use std::result::Result;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tabled::{style::Style, BorderText, Table, Tabled, Width, Modify, object::Rows, Disable, locator::ByColumnName};
+use tabled::{style::Style, BorderText, Table, Tabled, Width, Modify, object::Rows,
+             Disable, locator::ByColumnName, format::Format, object::*};
 use tempfile::Builder;
 
 static DEFAULT_EDITOR: &str = "vim";
@@ -35,7 +36,7 @@ struct Log {
     right_answers: usize,
 
     #[tabled(rename = "Percentage")]
-    percentage: String,
+    percentage: f32,
 }
 
 impl Log {
@@ -52,7 +53,7 @@ impl Log {
             uid: random_uid,
             total_questions: 0,
             right_answers: 0,
-            percentage: "unknown".to_string(),
+            percentage: 0.0,
         }
     }
 
@@ -77,10 +78,10 @@ fn get_date() -> String {
     return output.to_string();
 }
 
-fn get_percentage(amount: f32, total: f32) -> String {
+fn get_percentage(amount: f32, total: f32) -> f32 {
     let result = (amount * 100.0) / total;
     let rounded = result.round();
-    return format!("{}%", rounded);
+    return rounded;
 }
 
 impl Journal {
@@ -175,7 +176,7 @@ fn show_metrics(journals: &Vec<Journal>) {
             sum_questions += log.total_questions;
             sum_answers += log.right_answers;
         }
-        let sum_percentage: &str = &get_percentage(sum_answers as f32, sum_questions as f32);
+        let sum_percentage: &str = &get_percentage(sum_answers as f32, sum_questions as f32).to_string();
         let sum_questions: &str = &sum_questions.to_string();
         let sum_answers: &str = &sum_answers.to_string();
 
@@ -183,7 +184,7 @@ fn show_metrics(journals: &Vec<Journal>) {
         builder.set_columns(["", "Total"]);
         builder.add_record(["Questions", sum_questions]);
         builder.add_record(["Answers", sum_answers]);
-        builder.add_record(["Percentage", sum_percentage]);
+        builder.add_record(["Percentage", &sum_percentage]);
         let mut builder = builder.index();
         builder.hide_index();
 
@@ -201,16 +202,14 @@ fn show_journals(journals: &mut Vec<Journal>) {
     for journal in journals.iter_mut() {
         unsafe {
             if SORT {
-                for log in journal.logs.iter_mut() {
-                    log.percentage.pop();
-                }
-                journal.logs.sort_by(|b, a| a.percentage.parse::<i32>().unwrap().cmp(&b.percentage.parse::<i32>().unwrap()));
+                journal.logs.sort_by(|b, a| (a.percentage as i32).cmp(&(b.percentage as i32)));
                 // journal.logs.sort_by_key(|x| { x.percentage.pop(); x.percentage.parse::<i32>().unwrap() });
             }
         }
 
         let mut table = Table::new(&journal.logs);
         table
+            .with(Modify::new(ByColumnName::new("Percentage").not(Rows::first())).with(Format::new(|x| format!("{x}%"))))
             .with(Style::rounded())
             .with(BorderText::new(0, format!("{name} ", name = journal.name)))
             .with(Modify::new(Rows::new(1..)).with(Width::truncate(15).suffix("...")))
@@ -421,7 +420,7 @@ fn query_for(str: &str, filepath: &str) -> Result<(), ()> {
 
     let mut query_journal: Journal = Journal::new("Query");
     for journal in journals {
-        if journal.name == str {
+        if journal.name.to_lowercase() == str {
             show_journals(&mut vec![journal]);
             return Ok(());
         }
