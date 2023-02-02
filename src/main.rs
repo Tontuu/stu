@@ -415,7 +415,10 @@ fn query_for(str: &str, filepath: &str) -> Result<(), ()> {
             return Ok(());
         }
         for log in journal.logs.into_iter() {
-            if str == log.subject || str == log.topic || str == log.date {
+            if str == log.subject.to_lowercase()
+            || str == log.topic.to_lowercase()
+            || str == log.date.to_lowercase()
+            {
                 query_journal.add_log(log);
             }
         }
@@ -498,7 +501,7 @@ fn setup() -> Result<(), ()> {
                     }
 
                     if is_string_alphanumeric(str) {
-                        return query_for(str, filepath);
+                        return query_for(&str.to_lowercase(), filepath);
                     }
 
                     eprintln!("ERROR: Unknown query type");
@@ -585,7 +588,5 @@ fn main() -> ExitCode {
         Err(()) => ExitCode::FAILURE,
     }
 }
-
-// TODO:  
 // TODO: Implement sort by date and percentage
 // TODO: Implement create journal
