@@ -12,6 +12,7 @@ use tabled::{style::Style, BorderText, Table, Tabled, Width, Modify, object::Row
 use tempfile::Builder;
 
 static DEFAULT_EDITOR: &str = "vim";
+static mut SORT: bool = false;
 
 #[derive(Tabled, Serialize, Deserialize, Debug, Clone)]
 struct Log {
@@ -196,8 +197,18 @@ fn show_metrics(journals: &Vec<Journal>) {
     }
 }
 
-fn show_journals(journals: &Vec<Journal>) {
-    for journal in journals {
+fn show_journals(journals: &mut Vec<Journal>) {
+    for journal in journals.iter_mut() {
+        unsafe {
+            if SORT {
+                for log in journal.logs.iter_mut() {
+                    log.percentage.pop();
+                }
+                journal.logs.sort_by(|b, a| a.percentage.parse::<i32>().unwrap().cmp(&b.percentage.parse::<i32>().unwrap()));
+                // journal.logs.sort_by_key(|x| { x.percentage.pop(); x.percentage.parse::<i32>().unwrap() });
+            }
+        }
+
         let mut table = Table::new(&journal.logs);
         table
             .with(Style::rounded())
@@ -411,7 +422,7 @@ fn query_for(str: &str, filepath: &str) -> Result<(), ()> {
     let mut query_journal: Journal = Journal::new("Query");
     for journal in journals {
         if journal.name == str {
-            show_journals(&vec![journal]);
+            show_journals(&mut vec![journal]);
             return Ok(());
         }
         for log in journal.logs.into_iter() {
@@ -424,7 +435,7 @@ fn query_for(str: &str, filepath: &str) -> Result<(), ()> {
         }
     }
     if query_journal.logs.len() > 0 {
-        show_journals(&vec![query_journal]);
+        show_journals(&mut vec![query_journal]);
         return Ok(());
     }
 
@@ -487,20 +498,28 @@ fn setup() -> Result<(), ()> {
 
             match args.next().as_deref() {
                 Some("-m") => { show_metrics(&journals);                          return Ok(()); }
-                None       => { show_journals(&journals);                         return Ok(()); }
+                None       => { show_journals(&mut journals);                     return Ok(()); }
                 Some(_)    => { eprintln!("{}: Unknown argument", "ERROR".red()); return Err(());}
             }
 
 
         }
         "get" => {
-            match args.next().as_deref() {
-                Some(str) => {
-                    if is_string_numeric(str) {
-                        return query_uid(str, filepath);
+            let value = args.next();
+            match value {
+                Some(mut str) => {
+                    if is_string_numeric(&str) {
+                        return query_uid(&str, filepath);
                     }
 
-                    if is_string_alphanumeric(str) {
+                    if str == "-s" {
+                        match args.next() {
+                            Some(new_str) => unsafe { SORT = true; str = new_str; },
+                            None => { eprintln!("ERROR: Unknown argument"); return Err(()) },
+                        }
+                    }
+
+                    if is_string_alphanumeric(&str) {
                         return query_for(&str.to_lowercase(), filepath);
                     }
 
@@ -588,5 +607,5 @@ fn main() -> ExitCode {
         Err(()) => ExitCode::FAILURE,
     }
 }
-// TODO: Implement sort by date and percentage
+ 
 // TODO: Implement create journal
