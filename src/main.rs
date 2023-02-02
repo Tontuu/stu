@@ -670,11 +670,12 @@ fn setup() -> Result<(), ()> {
                         return Err(());
                     }
 
-                    let json_content = serde_json::to_string_pretty(&journals).map_err(|err| {
+                    let json_content = serde_json::to_string(&journals).map_err(|err| {
                         eprintln!("{}: Could not parse journal struct into json file: {err}", "ERROR".red())
                     })?;
 
-                    println!("{json_content}");
+                    update_json(json_content, filepath)?;
+                    println!("{}", format!("Sucessfully removed log with {input_uid} UID").green());
                     return Ok(());
                 },
                 None => {
