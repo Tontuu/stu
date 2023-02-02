@@ -543,10 +543,23 @@ fn setup() -> Result<(), ()> {
                         return Err(());
                     }
 
+                    let journal_name = journal_name.unwrap();
+
                     let mut journals: Vec<Journal> = Vec::new();
                     get_journals(filepath, &mut journals)?;
-                    
-                    println!("{journals:?}");
+
+                    let new_log: Log = make_log(&journal_name)?;
+                    let mut new_journal: Journal = Journal::new(&journal_name);
+                    new_journal.add_log(new_log);
+                    journals.push(new_journal);
+
+                    let json_content = serde_json::to_string(&journals).map_err(|err| {
+                        eprintln!("{}: Could not parse journal struct into json file: {err}", "ERROR".red())
+                    })?;
+
+                    update_json(json_content, filepath)?;
+                    println!("{}", format!("Sucessfully created journal").green());
+                    return Ok(());
                 }
                 Some(user_journal_query) => {
                     let mut journals: Vec<Journal> = Vec::new();
@@ -580,7 +593,9 @@ fn setup() -> Result<(), ()> {
                                 eprintln!("{}: Could not parse journal struct into json file: {err}", "ERROR".red())
                             })?;
 
-                            update_json(json_content, "foo.json")?;
+                            update_json(json_content, filepath)?;
+                            println!("{}", format!("Sucessfully added log into {user_journal_query}").green());
+                            return Ok(());
                         }
                     }
                 }
@@ -606,5 +621,3 @@ fn main() -> ExitCode {
         Err(()) => ExitCode::FAILURE,
     }
 }
- 
-// TODO: Implement create journal
