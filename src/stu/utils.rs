@@ -78,17 +78,19 @@ pub fn usage() {
     println!("    show   <subcommand>               print all user journals, use -m if you wanna print the metrics");
     println!("                ╰------------------------> print metrics: \"-m\"");
     println!();
+    println!("    add    <subcommand> <value>       add either a new log or journal");
+    println!("                ╰------------------------> add journal: \"-j\"");
+    println!();
     println!("    remove <subcommand> <value>       remove a log with the given <value>");
     println!("                │          ╰-------------> value can be: [UID, journal]");
     println!("                ╰------------------------> remove journal: \"-j\"");
     println!();
-    println!("    add    <subcommand> <value>       add either a new log or journal");
-    println!("                ╰------------------------> add journal: \"-j\"");
-    println!();
     println!("    get    <subcommand> <query>       search for <query> and print results");
     println!("                │          ╰-------------> query can be: [UID, journal, subject, topic, \"MM/DD/YYYY\"]");
     println!("                ╰------------------------> sort query: \"-s\"");
-    println!()
+    println!();
+    println!("    edit   <UID>                      edit log with the given UID");
+    println!();
 }
 
 pub fn setup_data() -> Result<String, ()> {

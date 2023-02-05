@@ -255,6 +255,54 @@ fn setup() -> Result<(), ()> {
                 return Err(());
             }
         },
+        "edit" => {
+            let input_uid = match args.next() {
+                Some(x) => x,
+                None    => {
+                    eprintln!("{}: UID was not provided", "ERROR".red());
+                    return Err(())
+                }
+            };
+
+            if input_uid.len() != 8 || !is_string_numeric(&input_uid) {
+                eprintln!("{}", "Argument is not a valid UID".red());
+                return Err(());
+            }
+
+            let mut journals: Vec<Journal> = Vec::new();
+            stu::get_journals(filepath, &mut journals)?;
+
+            let mut found = false;
+            for journal in journals.iter_mut() {
+                let logs = &mut journal.logs;
+                for (i, log) in logs.iter().enumerate() {
+                    if log.uid == input_uid {
+                        logs[i] = stu::edit_log(log.clone())?;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if !found {
+                eprintln!("{}", format!("Log with <{input_uid}> name not found").red());
+                return Err(());
+            }
+
+            let json_content = serde_json::to_string(&journals).map_err(|err| {
+                eprintln!(
+                    "{}: Could not parse journal struct into json file: {err}",
+                    "ERROR".red()
+                )
+            })?;
+
+            stu::sync_data(json_content, filepath)?;
+
+            println!(
+                "{}",
+                format!("Sucessfully edited log with {input_uid} UID").green()
+            );
+        },
+
         _ => {
             eprintln!("{}: Unexpected subcommand: {subcommand}", "ERROR".red());
             return Err(());
@@ -271,4 +319,3 @@ fn main() -> ExitCode {
     }
 }
 
-// TODO: add edit option

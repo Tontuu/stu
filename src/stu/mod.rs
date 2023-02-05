@@ -288,9 +288,6 @@ pub fn make_log(name: &str) -> Result<Log, ()> {
     tf.flush().unwrap();
     tf.rewind().unwrap();
 
-    tf.flush().unwrap();
-    tf.rewind().unwrap();
-
     let mut buf = String::new();
     tf.read_to_string(&mut buf).unwrap();
 
@@ -389,4 +386,63 @@ pub fn query_uid(uid: &str, filepath: &str) -> Result<(), ()> {
     show_log(&log.unwrap());
     return Ok(());
 }
+
+pub fn edit_log(log: Log) -> Result::<Log, ()> {
+    let mut tf = Builder::new()
+        .prefix("stu-log_")
+        .suffix(".md")
+        .rand_bytes(4)
+        .tempfile()
+        .map_err(|err| {
+            eprintln!("{}: Could not create tempfile: {err}", "ERROR".red());
+        })?;
+
+    let note_builder_text: &str = &format!(
+        "\
+        STU Note edit\n\n\
+        ------------------\n\n\
+        **TYPE INSIDE BRACKETS**\n\
+        *edit, save and exit*\n\
+        *to cancel just leave some field unchanged*\n\n\
+        \
+        Subject\n\
+        [{subject}]\n\n\
+        \
+        Topic\n\
+        [{topic}]\n\n\
+        \
+        Total Questions\n\
+        [{questions}]\n\n\
+        \
+        Right Answers\n\
+        [{answers}]\n\
+        ",
+        subject   = log.subject,
+        topic     = log.topic,
+        questions = log.total_questions,
+        answers   = log.right_answers
+    );
+
+    write!(tf, "{}", &note_builder_text).unwrap();
+    tf.flush().unwrap();
+
+    utils::edit_text(tf.path().display().to_string())?;
+
+    tf.flush().unwrap();
+    tf.rewind().unwrap();
+
+    let mut buf = String::new();
+    tf.read_to_string(&mut buf).unwrap();
+
+    let mut new_log: Log = log_from_tf(buf)?;
+
+    new_log.date = log.date;
+
+    tf.close().map_err(|err| {
+        eprintln!("{}: Could not delete temporary file: {err}", "ERROR".red());
+    })?;
+
+    Ok(new_log)
+}
+
 pub mod utils;
