@@ -132,8 +132,14 @@ pub fn show_metrics(journals: &Vec<Journal>) {
             sum_questions += log.total_questions;
             sum_answers += log.right_answers;
         }
-        let sum_percentage: &str =
-            &utils::get_percentage(sum_answers as f32, sum_questions as f32).to_string();
+        let mut sum_percentage = if sum_questions == 0 && sum_answers == 0 {
+            "0.0".to_string()
+        } else {
+            utils::get_percentage(sum_answers as f32, sum_questions as f32).to_string()
+        };
+
+        sum_percentage.push('%');
+
         let sum_questions: &str = &sum_questions.to_string();
         let sum_answers: &str = &sum_answers.to_string();
 
@@ -162,7 +168,6 @@ pub fn show_journals(journals: &mut Vec<Journal>) {
                 journal
                     .logs
                     .sort_by(|b, a| (a.percentage as i32).cmp(&(b.percentage as i32)));
-                // journal.logs.sort_by_key(|x| { x.percentage.pop(); x.percentage.parse::<i32>().unwrap() });
             }
         }
 

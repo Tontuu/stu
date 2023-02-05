@@ -41,6 +41,7 @@ fn setup() -> Result<(), ()> {
 
                 return Err(());
             }
+
             match args.next().as_deref() {
                 Some("-m") => {
                     stu::show_metrics(&journals);
@@ -184,6 +185,7 @@ fn setup() -> Result<(), ()> {
                 let input_journal_name = input_journal_name.unwrap();
                 let mut journals: Vec<Journal> = Vec::new();
                 stu::get_journals(filepath, &mut journals)?;
+
 
                 let mut found = false;
                 for (i, journal) in journals.iter().enumerate() {
