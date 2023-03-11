@@ -436,6 +436,7 @@ pub fn edit_log(log: Log) -> Result::<Log, ()> {
 
     let mut new_log: Log = log_from_tf(buf)?;
 
+    new_log.uid = log.uid;
     new_log.date = log.date;
 
     tf.close().map_err(|err| {
