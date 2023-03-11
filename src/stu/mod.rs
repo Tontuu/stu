@@ -367,11 +367,6 @@ pub fn query_for(str: &str, filepath: &str) -> Result<(), ()> {
 }
 
 pub fn query_uid(uid: &str, filepath: &str) -> Result<(), ()> {
-    if uid.len() != 9 {
-        eprintln!("{}: <{uid}> is an invalid UID", "ERROR".red());
-        return Err(());
-    }
-
     let mut journals: Vec<Journal> = Vec::new();
     get_journals(filepath, &mut journals)?;
 

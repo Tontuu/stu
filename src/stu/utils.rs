@@ -26,7 +26,6 @@ pub fn get_percentage(amount: f32, total: f32) -> f32 {
 }
 
 pub fn edit_text(filepath: String) -> Result<(), ()> {
-    // TODO: Give user the external option of choosing the EDITOR
     let env_editor: String =
         env::var("EDITOR").unwrap_or_else(|_| crate::DEFAULT_EDITOR.to_string());
 
@@ -68,10 +67,8 @@ pub fn is_string_alphanumeric(str: &str) -> bool {
 }
 
 pub fn usage() {
-    println!(
-        "{usage}: stu <subcommand> <options>\n",
-        usage = "Usage".red()
-    );
+    println!("{usage}: stu <subcommand> <options>\n", usage = "Usage".red());
+    println!("Change editor with `EDITOR=emacs` for instance. Default editor is vim\n");
     println!("{subcommands}:", subcommands = "Subcommands".red());
     println!("    -h      --help                    print help");
     println!();

@@ -266,7 +266,7 @@ fn setup() -> Result<(), ()> {
                 }
             };
 
-            if input_uid.len() != 8 || !is_string_numeric(&input_uid) {
+            if !is_string_numeric(&input_uid) {
                 eprintln!("{}", "Argument is not a valid UID".red());
                 return Err(());
             }
