@@ -252,7 +252,7 @@ fn log_from_tf(buf: String) -> Result<Log, ()> {
 pub fn make_log(name: &str) -> Result<Log, ()> {
     let mut tf = Builder::new()
         .prefix("stu-log_")
-        .suffix(".md")
+        .suffix(".txt")
         .rand_bytes(4)
         .tempfile()
         .map_err(|err| {
@@ -390,7 +390,7 @@ pub fn query_uid(uid: &str, filepath: &str) -> Result<(), ()> {
 pub fn edit_log(log: Log) -> Result::<Log, ()> {
     let mut tf = Builder::new()
         .prefix("stu-log_")
-        .suffix(".md")
+        .suffix(".txt")
         .rand_bytes(4)
         .tempfile()
         .map_err(|err| {

@@ -11,3 +11,10 @@ serde_json = "1.0"
 serde = {version = "1.0.152", features = ["derive"]}
 tempfile = "3.3.0"
 colored = "2.0.0"
+simple-home-dir = "0.2.0"
+edit = "0.1.4"
+
+
+[[test]]
+name = "utils_test"
+path = "src/utils_test.rs"

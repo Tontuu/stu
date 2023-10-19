@@ -4,10 +4,10 @@ use std::process::ExitCode;
 use std::result::Result;
 use crate::stu::{utils::*, Journal, Log};
 
-mod stu;
+pub mod stu;
 
-static DEFAULT_EDITOR: &str = "vim";
 static mut SORT: bool = false;
+
 
 fn setup() -> Result<(), ()> {
     let filepath: &str = &setup_data()?;
@@ -320,4 +320,3 @@ fn main() -> ExitCode {
         Err(()) => ExitCode::FAILURE,
     }
 }
-

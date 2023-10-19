@@ -1,18 +1,24 @@
 use colored::Colorize;
-use std::env;
 use std::process::Command;
 use std::result::Result;
 use std::path::Path;
-use std::fs;
 use std::fs::File;
 use std::io::Write;
 
 pub fn get_date() -> String {
-    let date_process = Command::new("/usr/bin/date")
-        .arg("+%m/%d/%Y")
+    let date_process: std::process::Output;
+    if cfg!(windows) {
+        date_process = Command::new("cmd")
+        .args(["/C", "date /t"])
         .output()
-        .expect("ERROR: Could not run date process");
+        .expect("ERROR: Could no trun date process on windows");
+    } else {
+        date_process = Command::new("/usr/bin/date")
+            .arg("+%m/%d/%Y")
+            .output()
+            .expect("ERROR: Could not run date process");
 
+    }
     let output = std::str::from_utf8(&date_process.stdout)
         .unwrap_or_else(|_| "unknown")
         .trim();
@@ -26,16 +32,8 @@ pub fn get_percentage(amount: f32, total: f32) -> f32 {
 }
 
 pub fn edit_text(filepath: String) -> Result<(), ()> {
-    let env_editor: String =
-        env::var("EDITOR").unwrap_or_else(|_| crate::DEFAULT_EDITOR.to_string());
-
-    let mut editor_process = Command::new(&env_editor)
-        .arg(filepath)
-        .spawn()
-        .expect(format!("ERROR: Could not start {} editor", env_editor).as_str());
-
-    let _exit_code = editor_process.wait().map_err(|err| {
-        eprintln!("{}: {err}", "ERROR".red());
+    edit::edit_file(filepath).map_err(|err| {
+        eprintln!("{}: Could not edit file: {err}", "ERROR");
     })?;
 
     Ok(())
@@ -91,19 +89,16 @@ pub fn usage() {
 }
 
 pub fn setup_data() -> Result<String, ()> {
-    let home_path = env::var("HOME").map_err(|_| {
-        eprintln!("{}: You got no home lol", "ERROR".red());
-    })?;
+    let home_path:String = simple_home_dir::home_dir().unwrap().display().to_string();
+    let data_dir_path = if cfg!(windows) { home_path + "\\stu\\" } else { "/local/share/stu/".to_string() };
 
-    let data_dir_path = &format!("{home_path}/.local/share/stu/");
-
-    if !Path::new(data_dir_path).exists() {
-        fs::create_dir(data_dir_path).map_err(|err| {
-            eprintln!("{}: Could not create database file: {err}", "ERROR".red());
-        })?;
+    if !std::path::Path::new(&data_dir_path).exists() {
+        std::fs::create_dir(&data_dir_path).map_err(|err| {
+            eprintln!("{}: Could not create database file: {err}", "ERROR");
+        }).unwrap();
     }
 
-    let data_file_path = format!("{data_dir_path}data.json");
+    let data_file_path = format!("{data_dir_path}data.json", );
 
     if !Path::new(&data_file_path).exists() {
         let mut file = File::create(&data_file_path).map_err(|err| {
